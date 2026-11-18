@@ -56,6 +56,16 @@ class CandidateTests(unittest.TestCase):
         for bad in (float('nan'),-1.):
             s=self.session();v=predicted_snapshot(s,CAL);v['covariance'][0][0]=bad
             self.assertEqual(s.qualify_prediction(v)['state'],'lost')
+    def test_dvl_before_imu_initialization_preserves_aiding_timestamp(self):
+        from test_inertial_session import session,feed
+        calibration=session().calibration
+        s=BoundedInertialDvlSession(calibration)
+        feed(s,end=15)
+        self.assertIsNotNone(s.filter)
+        self.assertIsNotNone(s.last_aiding_stamp)
+        self.assertTrue(s.bottom_locked)
+        out=predicted_snapshot(s,calibration)
+        self.assertEqual(out['state'],'tracking')
     def test_limit_validation(self):
         for v in (0,2.,True,float('nan')):
             with self.assertRaises(ValueError):self.session(max_coast_s=v)

@@ -46,13 +46,25 @@ class BoundedInertialDvlSession(InertialDvlSession):
     def dvl(self, stamp, velocity, uncertainty, locked, now):
         if self.last_loss_stamp is not None and stamp<=self.last_loss_stamp:
             self.invalidate('dvl_reacquisition_time_reversal');return
-        had_filter=self.filter is not None
         super().dvl(stamp,velocity,uncertainty,locked,now)
-        if self.filter is not None and (not had_filter or (self.last_update and self.last_update.get('accepted'))):
+
+    def flush(self):
+        # A DVL packet may arrive before its IMU endpoint. Initialization and
+        # accepted updates can therefore occur in imu(), not only in dvl().
+        previous=self.filter
+        previous_stamp=previous.stamp if previous is not None else None
+        super().flush()
+        if self.filter is None:return
+        if previous is None:
             self.last_aiding_stamp=self.filter.stamp
-        self.bottom_locked=bool(self.filter is not None and self.last_update
-                                and self.last_update.get('accepted'))
-        if self.bottom_locked:self.last_loss_stamp=None
+            self.bottom_locked=True
+            self.last_loss_stamp=None
+        elif self.filter.stamp!=previous_stamp:
+            accepted=bool(self.last_update and self.last_update.get('accepted'))
+            self.bottom_locked=accepted
+            if accepted:
+                self.last_aiding_stamp=self.filter.stamp
+                self.last_loss_stamp=None
 
     def qualify_prediction(self, value):
         """Bound actual propagated covariance, never the last DVL covariance."""
