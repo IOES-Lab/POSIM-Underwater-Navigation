@@ -1,0 +1,17 @@
+POSIM Underwater Navigation
+Copyright IOES-Lab contributors
+
+The initial core modules inertial.py, inertial_filter.py, inertial_alignment.py,
+inertial_initialization.py, inertial_session.py, and geometry validation functions
+are derived from Apache-2.0-licensed IOES-Lab/POSIM-SLAM source at revision
+ d14e125e43ee882c5a339b1193ba61d3cd84d180.
+Associated inertial numerical tests are retained from the same revision.
+Import paths were changed and geometry primitives separated from visual map scale
+estimation. The source repository is not modified by this extraction.
+https://github.com/IOES-Lab/POSIM-SLAM
+
+The bounded-coast supervisor, prediction adapter and GNSS alignment candidate
+are new contributions for this independent package. This repository contains
+no application runtime state, private operational documentation or credentials.
+
+Changes are provided under Apache-2.0. See LICENSE.
