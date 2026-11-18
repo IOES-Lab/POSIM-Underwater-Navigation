@@ -7,7 +7,8 @@ are derived from Apache-2.0-licensed IOES-Lab/POSIM-SLAM source at revision
  d14e125e43ee882c5a339b1193ba61d3cd84d180.
 Associated inertial numerical tests are retained from the same revision.
 Import paths were changed and geometry primitives separated from visual map scale
-estimation. The source repository is not modified by this extraction.
+estimation. Receipt-time validation is hardened in this independent package.
+The source repository is not modified by this extraction.
 https://github.com/IOES-Lab/POSIM-SLAM
 
 The bounded-coast supervisor, prediction adapter and GNSS alignment candidate

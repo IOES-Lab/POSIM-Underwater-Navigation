@@ -35,13 +35,21 @@ class InertialDvlSession:
         self.last_imu_wall=None;self.last_dvl_wall=None;self.last_dvl_stamp=None
         self.accepted=0;self.last_update=None
 
+    @staticmethod
+    def valid_wall_time(now):
+        return type(now) in (int,float) and math.isfinite(now) and now>=0
+
     def imu(self,stamp,gyro,force,now):
+        if not self.valid_wall_time(now):
+            self.invalidate('invalid_sensor_receipt_time');return
         try:
             self.window.add(stamp,gyro,force);self.last_imu_wall=float(now)
             self.flush()
         except (ValueError,TypeError,np.linalg.LinAlgError) as error:self.invalidate(str(error))
 
     def dvl(self,stamp,velocity,uncertainty,locked,now):
+        if not self.valid_wall_time(now):
+            self.invalidate('invalid_sensor_receipt_time');return
         try:
             if locked is not True:raise ValueError('dvl_bottom_lock_lost')
             if type(stamp) not in (int,float) or not math.isfinite(stamp) or stamp<0:
@@ -92,6 +100,8 @@ class InertialDvlSession:
             self.reason='fused' if result['accepted'] else 'dvl_innovation_rejected'
 
     def tick(self,now):
+        if not self.valid_wall_time(now):
+            self.invalidate('invalid_sensor_receipt_time');return
         if self.last_imu_wall is not None and now-self.last_imu_wall>2:
             self.invalidate('imu_stale')
         elif self.last_dvl_wall is not None and now-self.last_dvl_wall>3:

@@ -66,6 +66,29 @@ class CandidateTests(unittest.TestCase):
         self.assertTrue(s.bottom_locked)
         out=predicted_snapshot(s,calibration)
         self.assertEqual(out['state'],'tracking')
+    def test_queued_pre_loss_dvl_cannot_restore_bottom_lock(self):
+        s=self.session()
+        s.dvl(1.2,[.1,0,0],np.eye(3)*.001,True,1.2)
+        s.bottom_loss(1.3,1.3)
+        for t in np.linspace(1.005,1.3,60):s.imu(float(t),[0,0,0],[0,0,9.80665],1.4)
+        self.assertEqual(s.last_aiding_stamp,1.2)
+        self.assertFalse(s.bottom_locked)
+        self.assertEqual(s.last_loss_stamp,1.3)
+        self.assertEqual(predicted_snapshot(s,CAL)['navigation_quality'],'inertial_coasting')
+    def test_none_dvl_stamp_invalidates_without_exception(self):
+        s=self.session();s.bottom_loss(.5,.5)
+        s.dvl(None,[0,0,0],np.eye(3),True,1.)
+        self.assertIsNone(s.filter);self.assertEqual(s.reason,'invalid_dvl_stamp')
+    def test_invalid_receipt_time_cannot_bypass_staleness(self):
+        for bad in (float('nan'),float('inf'),None,True,-1):
+            for kind in ('imu','dvl','bottom_loss','tick'):
+                s=self.session()
+                if kind=='imu':s.imu(1.1,[0,0,0],[0,0,9.80665],bad)
+                elif kind=='dvl':s.dvl(1.1,[0,0,0],np.eye(3),True,bad)
+                elif kind=='bottom_loss':s.bottom_loss(1.1,bad)
+                else:s.tick(bad)
+                self.assertIsNone(s.filter,(bad,kind))
+                self.assertEqual(s.reason,'invalid_sensor_receipt_time')
     def test_limit_validation(self):
         for v in (0,2.,True,float('nan')):
             with self.assertRaises(ValueError):self.session(max_coast_s=v)
