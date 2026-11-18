@@ -26,22 +26,30 @@ class InertialDvlSession:
         self.segment=0;self.state='initializing';self.reason='waiting_inputs'
         self.filter=None;self.diagnostics=None;self.last_attempt=None
         self.last_imu_wall=None;self.last_dvl_wall=None;self.last_dvl_stamp=None
-        self.accepted=0;self.last_update=None
+        self.accepted=0;self.last_update=None;self.last_accepted_dvl_stamp=None
 
     def invalidate(self,reason):
         if self.state!='lost' or self.filter is not None:self.segment+=1
         self.state='lost';self.reason=reason;self.filter=None;self.diagnostics=None
         self.window.clear();self.dvl_samples.clear();self.last_attempt=None
         self.last_imu_wall=None;self.last_dvl_wall=None;self.last_dvl_stamp=None
-        self.accepted=0;self.last_update=None
+        self.accepted=0;self.last_update=None;self.last_accepted_dvl_stamp=None
+
+    @staticmethod
+    def valid_wall_time(now):
+        return type(now) in (int,float) and math.isfinite(now) and now>=0
 
     def imu(self,stamp,gyro,force,now):
+        if not self.valid_wall_time(now):
+            self.invalidate('invalid_sensor_receipt_time');return
         try:
             self.window.add(stamp,gyro,force);self.last_imu_wall=float(now)
             self.flush()
         except (ValueError,TypeError,np.linalg.LinAlgError) as error:self.invalidate(str(error))
 
     def dvl(self,stamp,velocity,uncertainty,locked,now):
+        if not self.valid_wall_time(now):
+            self.invalidate('invalid_sensor_receipt_time');return
         try:
             if locked is not True:raise ValueError('dvl_bottom_lock_lost')
             if type(stamp) not in (int,float) or not math.isfinite(stamp) or stamp<0:
@@ -78,6 +86,7 @@ class InertialDvlSession:
                     diagnostics['velocity_three_sigma_m_s']>self.limits[1]):
                 self.state='initializing';self.reason='initial_uncertainty_too_large';return
             self.filter=estimator;self.state='tracking';self.reason='moving_initialized'
+            self.last_accepted_dvl_stamp=estimator.stamp
         for stamp,velocity,uncertainty,_ in self.dvl_samples:
             if stamp<=self.filter.stamp:continue
             if stamp>last:break
@@ -89,9 +98,12 @@ class InertialDvlSession:
                 gyro_covariance=np.eye(3)*noise)
             if not self.filter.valid:raise ValueError(self.filter.invalid_reason)
             self.last_update=result;self.accepted+=int(result['accepted'])
+            if result['accepted']:self.last_accepted_dvl_stamp=stamp
             self.reason='fused' if result['accepted'] else 'dvl_innovation_rejected'
 
     def tick(self,now):
+        if not self.valid_wall_time(now):
+            self.invalidate('invalid_sensor_receipt_time');return
         if self.last_imu_wall is not None and now-self.last_imu_wall>2:
             self.invalidate('imu_stale')
         elif self.last_dvl_wall is not None and now-self.last_dvl_wall>3:
@@ -101,7 +113,7 @@ class InertialDvlSession:
         f=self.filter
         return dict(state=self.state,reason=self.reason,segment=self.segment,
             stamp=f.stamp if f else None,initialization=self.diagnostics,
-            accepted_dvl_updates=self.accepted,inertial_fused=f is not None,
+            accepted_dvl_updates=self.accepted,last_accepted_dvl_stamp=self.last_accepted_dvl_stamp,inertial_fused=f is not None,
             navigation_ready=False,orientation_measurement_used=False,
             position=f.position.tolist() if f else None,
             attitude=f.attitude.tolist() if f else None,
