@@ -60,6 +60,8 @@ class BoundedInertialDvlSession(InertialDvlSession):
         previous_stamp=previous.stamp if previous is not None else None
         super().flush()
         if self.filter is None:return
+        if self.last_accepted_dvl_stamp is not None:
+            self.last_aiding_stamp=self.last_accepted_dvl_stamp
         if previous is None:
             self.last_aiding_stamp=self.filter.stamp
             self.bottom_locked=self.last_loss_stamp is None or self.filter.stamp>self.last_loss_stamp
@@ -67,7 +69,6 @@ class BoundedInertialDvlSession(InertialDvlSession):
         elif self.filter.stamp!=previous_stamp:
             accepted=bool(self.last_update and self.last_update.get('accepted'))
             self.bottom_locked=accepted and (self.last_loss_stamp is None or self.filter.stamp>self.last_loss_stamp)
-            if accepted:self.last_aiding_stamp=self.filter.stamp
             if self.bottom_locked:self.last_loss_stamp=None
 
     def qualify_prediction(self, value):

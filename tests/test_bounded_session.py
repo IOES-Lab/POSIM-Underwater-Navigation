@@ -89,6 +89,19 @@ class CandidateTests(unittest.TestCase):
                 else:s.tick(bad)
                 self.assertIsNone(s.filter,(bad,kind))
                 self.assertEqual(s.reason,'invalid_sensor_receipt_time')
+    def test_batch_tracks_each_accepted_dvl_not_only_last_result(self):
+        for rejected_first in (False,True):
+            s=self.session()
+            for t in np.linspace(1.005,1.195,39):s.imu(float(t),[0,0,0],[0,0,9.80665],float(t))
+            good=[.1,0,0];bad=[100,100,100]
+            s.dvl(1.2,bad if rejected_first else good,np.eye(3)*.001,True,1.2)
+            s.dvl(1.21,good if rejected_first else bad,np.eye(3)*.001,True,1.21)
+            s.imu(1.215,[0,0,0],[0,0,9.80665],1.215)
+            self.assertEqual(s.accepted,1)
+            self.assertEqual(s.last_aiding_stamp,1.21 if rejected_first else 1.2)
+            self.assertEqual(s.last_accepted_dvl_stamp,s.last_aiding_stamp)
+            self.assertEqual(s.bottom_locked,rejected_first)
+            self.assertLess(predicted_snapshot(s,CAL)['dvl_age_s'],.02)
     def test_limit_validation(self):
         for v in (0,2.,True,float('nan')):
             with self.assertRaises(ValueError):self.session(max_coast_s=v)
