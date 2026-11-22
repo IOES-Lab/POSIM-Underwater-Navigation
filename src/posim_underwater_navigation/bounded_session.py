@@ -30,6 +30,8 @@ class BoundedInertialDvlSession(InertialDvlSession):
         super().invalidate(reason)
 
     def bottom_loss(self, stamp, now):
+        if not self.valid_wall_time(now):
+            self.invalidate('invalid_sensor_receipt_time');return
         if (isinstance(stamp,bool) or not isinstance(stamp,(int,float))
                 or not math.isfinite(stamp) or stamp<0
                 or (self.last_dvl_stamp is not None and stamp<=self.last_dvl_stamp)
@@ -44,15 +46,30 @@ class BoundedInertialDvlSession(InertialDvlSession):
         self.reason='inertial_coasting_bottom_lock_lost'
 
     def dvl(self, stamp, velocity, uncertainty, locked, now):
+        if (isinstance(stamp,bool) or not isinstance(stamp,(int,float))
+                or not math.isfinite(stamp) or stamp<0):
+            self.invalidate('invalid_dvl_stamp');return
         if self.last_loss_stamp is not None and stamp<=self.last_loss_stamp:
             self.invalidate('dvl_reacquisition_time_reversal');return
-        had_filter=self.filter is not None
         super().dvl(stamp,velocity,uncertainty,locked,now)
-        if self.filter is not None and (not had_filter or (self.last_update and self.last_update.get('accepted'))):
+
+    def flush(self):
+        # A DVL packet may arrive before its IMU endpoint. Initialization and
+        # accepted updates can therefore occur in imu(), not only in dvl().
+        previous=self.filter
+        previous_stamp=previous.stamp if previous is not None else None
+        super().flush()
+        if self.filter is None:return
+        if self.last_accepted_dvl_stamp is not None:
+            self.last_aiding_stamp=self.last_accepted_dvl_stamp
+        if previous is None:
             self.last_aiding_stamp=self.filter.stamp
-        self.bottom_locked=bool(self.filter is not None and self.last_update
-                                and self.last_update.get('accepted'))
-        if self.bottom_locked:self.last_loss_stamp=None
+            self.bottom_locked=self.last_loss_stamp is None or self.filter.stamp>self.last_loss_stamp
+            if self.bottom_locked:self.last_loss_stamp=None
+        elif self.filter.stamp!=previous_stamp:
+            accepted=bool(self.last_update and self.last_update.get('accepted'))
+            self.bottom_locked=accepted and (self.last_loss_stamp is None or self.filter.stamp>self.last_loss_stamp)
+            if self.bottom_locked:self.last_loss_stamp=None
 
     def qualify_prediction(self, value):
         """Bound actual propagated covariance, never the last DVL covariance."""

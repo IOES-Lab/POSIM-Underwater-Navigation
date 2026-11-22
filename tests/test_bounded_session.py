@@ -56,6 +56,52 @@ class CandidateTests(unittest.TestCase):
         for bad in (float('nan'),-1.):
             s=self.session();v=predicted_snapshot(s,CAL);v['covariance'][0][0]=bad
             self.assertEqual(s.qualify_prediction(v)['state'],'lost')
+    def test_dvl_before_imu_initialization_preserves_aiding_timestamp(self):
+        from test_inertial_session import session,feed
+        calibration=session().calibration
+        s=BoundedInertialDvlSession(calibration)
+        feed(s,end=15)
+        self.assertIsNotNone(s.filter)
+        self.assertIsNotNone(s.last_aiding_stamp)
+        self.assertTrue(s.bottom_locked)
+        out=predicted_snapshot(s,calibration)
+        self.assertEqual(out['state'],'tracking')
+    def test_queued_pre_loss_dvl_cannot_restore_bottom_lock(self):
+        s=self.session()
+        s.dvl(1.2,[.1,0,0],np.eye(3)*.001,True,1.2)
+        s.bottom_loss(1.3,1.3)
+        for t in np.linspace(1.005,1.3,60):s.imu(float(t),[0,0,0],[0,0,9.80665],1.4)
+        self.assertEqual(s.last_aiding_stamp,1.2)
+        self.assertFalse(s.bottom_locked)
+        self.assertEqual(s.last_loss_stamp,1.3)
+        self.assertEqual(predicted_snapshot(s,CAL)['navigation_quality'],'inertial_coasting')
+    def test_none_dvl_stamp_invalidates_without_exception(self):
+        s=self.session();s.bottom_loss(.5,.5)
+        s.dvl(None,[0,0,0],np.eye(3),True,1.)
+        self.assertIsNone(s.filter);self.assertEqual(s.reason,'invalid_dvl_stamp')
+    def test_invalid_receipt_time_cannot_bypass_staleness(self):
+        for bad in (float('nan'),float('inf'),None,True,-1):
+            for kind in ('imu','dvl','bottom_loss','tick'):
+                s=self.session()
+                if kind=='imu':s.imu(1.1,[0,0,0],[0,0,9.80665],bad)
+                elif kind=='dvl':s.dvl(1.1,[0,0,0],np.eye(3),True,bad)
+                elif kind=='bottom_loss':s.bottom_loss(1.1,bad)
+                else:s.tick(bad)
+                self.assertIsNone(s.filter,(bad,kind))
+                self.assertEqual(s.reason,'invalid_sensor_receipt_time')
+    def test_batch_tracks_each_accepted_dvl_not_only_last_result(self):
+        for rejected_first in (False,True):
+            s=self.session()
+            for t in np.linspace(1.005,1.195,39):s.imu(float(t),[0,0,0],[0,0,9.80665],float(t))
+            good=[.1,0,0];bad=[100,100,100]
+            s.dvl(1.2,bad if rejected_first else good,np.eye(3)*.001,True,1.2)
+            s.dvl(1.21,good if rejected_first else bad,np.eye(3)*.001,True,1.21)
+            s.imu(1.215,[0,0,0],[0,0,9.80665],1.215)
+            self.assertEqual(s.accepted,1)
+            self.assertEqual(s.last_aiding_stamp,1.21 if rejected_first else 1.2)
+            self.assertEqual(s.last_accepted_dvl_stamp,s.last_aiding_stamp)
+            self.assertEqual(s.bottom_locked,rejected_first)
+            self.assertLess(predicted_snapshot(s,CAL)['dvl_age_s'],.02)
     def test_limit_validation(self):
         for v in (0,2.,True,float('nan')):
             with self.assertRaises(ValueError):self.session(max_coast_s=v)
